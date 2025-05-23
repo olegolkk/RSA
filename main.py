@@ -4,9 +4,6 @@ from math import gcd, sqrt
 from sympy import mod_inverse
 import argparse
 
-# Глобальные переменные для ключей
-e = m = d = 0
-
 # Словари для кодирования/декодирования
 encoding_dict = {
     'А': 10, 'Б': 11, 'В': 12, 'Г': 13, 'Д': 14, 'Е': 15, 'Ё': 16,
@@ -19,110 +16,180 @@ encoding_dict = {
 decoding_dict = {str(k): v for v, k in encoding_dict.items()}
 
 
-def generate_keys(bit_rate=2):
-    """Генерация ключевой пары RSA"""
-    global e, m, d
+class RSA:
+    def __init__(self, bit_rate=2):
+        self.bit_rate = bit_rate
+        self.e = self.m = self.d = 0
+        self.p = self.q = 0
 
-    p = q = 0
-    while p == q:
-        p = prime_generation(bit_rate)
-        q = prime_generation(bit_rate)
+    def generate_keys(self):
+        """Генерация ключевой пары RSA"""
+        self.p = self.q = 0
+        while self.p == self.q:
+            self.p = self.prime_generation()
+            self.q = self.prime_generation()
 
-    m = p * q
-    n = (p - 1) * (q - 1)
-    e = find_e(n)
-    d = find_d(n, e)
+        self.m = self.p * self.q
+        n = (self.p - 1) * (self.q - 1)
+        self.e = self.find_e(n)
+        self.d = self.find_d(n, self.e)
 
-    while e * d % n != 1 or e == d:
-        e = find_e(n)
-        d = find_d(n, e)
+        while self.e * self.d % n != 1 or self.e == self.d:
+            self.e = self.find_e(n)
+            self.d = self.find_d(n, self.e)
 
-    return (e, m), (d, m)
+        return (self.e, self.m), (self.d, self.m)
 
-
-def prime_generation(bit_rate):
-    """Генерация простого числа заданной битности"""
-    start_num = 10 ** (bit_rate - 1) + 1
-    end_num = 10 ** bit_rate - 1
-    num = random.randint(start_num, end_num)
-    while not is_prime(num):
+    def prime_generation(self):
+        """Генерация простого числа заданной битности"""
+        start_num = 10 ** (self.bit_rate - 1) + 1
+        end_num = 10 ** self.bit_rate - 1
         num = random.randint(start_num, end_num)
-    return num
+        while not self.is_prime(num):
+            num = random.randint(start_num, end_num)
+        return num
 
+    @staticmethod
+    def is_prime(n):
+        """Проверка числа на простоту"""
+        if n % 2 == 0:
+            return n == 2
+        d = 3
+        while d * d <= n and n % d != 0:
+            d += 2
+        return d * d > n
 
-def is_prime(n):
-    """Проверка числа на простоту"""
-    if n % 2 == 0:
-        return n == 2
-    d = 3
-    while d * d <= n and n % d != 0:
-        d += 2
-    return d * d > n
-
-
-def find_e(n):
-    """Поиск открытой экспоненты"""
-    e = random.randint(2, n - 1)
-    while math.gcd(n, e) != 1:
+    @staticmethod
+    def find_e(n):
+        """Поиск открытой экспоненты"""
         e = random.randint(2, n - 1)
-    return e
+        while gcd(n, e) != 1:
+            e = random.randint(2, n - 1)
+        return e
+
+    @staticmethod
+    def find_d(n, e):
+        """Поиск закрытой экспоненты"""
+        return mod_inverse(e, n)
+
+    @staticmethod
+    def encode(text):
+        """Кодирование текста в числовое представление"""
+        encoded_text = ''
+        for char in text.upper():
+            if char in encoding_dict:
+                encoded_text += str(encoding_dict[char])
+            else:
+                print(f"Предупреждение: символ '{char}' не поддерживается и будет пропущен")
+        return encoded_text
+
+    def encrypt(self, text, public_key=None):
+        """Шифрование текста с использованием открытого ключа"""
+        if public_key is None:
+            public_key = (self.e, self.m)
+        e, m = public_key
+        full_text = ''
+        enc_text = self.encode(text.strip())
+
+        for i in range(0, len(enc_text), 2):
+            code_text = enc_text[i:i + 2]
+            if len(code_text) < 2:
+                code_text = code_text.ljust(2, '0')
+            y = pow(int(code_text), e, m)
+            full_text = full_text + str(y) + '-'
+
+        return full_text[:-1]  # Удаляем последний '-'
+
+    def decrypt(self, crypto_text, private_key=None):
+        """Расшифрование текста с использованием закрытого ключа"""
+        if private_key is None:
+            private_key = (self.d, self.m)
+        d, m = private_key
+        full_text = ''
+        nums = str(crypto_text).split('-')
+
+        for num in nums:
+            decr_text = pow(int(num), d, m)
+            full_text += f"{decr_text:02d}"  # Добавляем ведущий ноль для однозначных чисел
+
+        return self.decode(full_text)
+
+    @staticmethod
+    def decode(enc_text):
+        """Декодирование числового представления в текст"""
+        decoded_text = ''
+        for i in range(0, len(enc_text), 2):
+            num = enc_text[i: i + 2]
+            if num in decoding_dict:
+                decoded_text += decoding_dict[num]
+            else:
+                decoded_text += '?'
+        return decoded_text
 
 
-def find_d(n, e):
-    """Поиск закрытой экспоненты"""
-    return mod_inverse(e, n)
+class RSAAttack:
+    """Класс для реализации атак на RSA"""
 
+    @staticmethod
+    def factorize(n):
+        """Факторизация модуля n (атака на малый модуль)"""
+        if n % 2 == 0:
+            return 2, n // 2
 
-def encode(text):
-    """Кодирование текста в числовое представление"""
-    encoded_text = ''
-    for char in text.upper():
-        if char in encoding_dict:
-            encoded_text += str(encoding_dict[char])
-        else:
-            print(f"Предупреждение: символ '{char}' не поддерживается и будет пропущен")
-    return encoded_text
+        # Проверяем нечетные делители до квадратного корня из n
+        max_divisor = int(sqrt(n)) + 1
+        for i in range(3, max_divisor, 2):
+            if n % i == 0:
+                return i, n // i
 
+        return None, None
 
-def encrypt(text, public_key):
-    """Шифрование текста с использованием открытого ключа"""
-    e, m = public_key
-    full_text = ''
-    enc_text = encode(text.strip())
+    @staticmethod
+    def small_modulus_attack(public_key):
+        """Атака на малый модуль RSA"""
+        e, n = public_key
 
-    for i in range(0, len(enc_text), 2):
-        code_text = enc_text[i:i + 2]
-        if len(code_text) < 2:
-            code_text = code_text.ljust(2, '0')
-        y = pow(int(code_text), e, m)
-        full_text = full_text + str(y) + '-'
+        print(f"\nНачата атака на малый модуль n = {n}...")
+        p, q = RSAAttack.factorize(n)
 
-    return full_text[:-1]  # Удаляем последний '-'
+        if p is None:
+            print("Атака не удалась: не удалось факторизовать модуль n")
+            return None
 
+        print(f"Найдены простые делители: p = {p}, q = {q}")
 
-def decrypt(crypto_text, private_key):
-    """Расшифрование текста с использованием закрытого ключа"""
-    d, m = private_key
-    full_text = ''
-    nums = str(crypto_text).split('-')
+        # Вычисляем функцию Эйлера
+        phi = (p - 1) * (q - 1)
 
-    for num in nums:
-        decr_text = pow(int(num), d, m)
-        full_text += f"{decr_text:02d}"  # Добавляем ведущий ноль для однозначных чисел
+        # Находим закрытую экспоненту
+        try:
+            d = mod_inverse(e, phi)
+            print(f"Найден закрытый ключ: d = {d}")
+            return (d, n)
+        except ValueError:
+            print("Не удалось найти закрытую экспоненту")
+            return None
 
-    return decode(full_text)
+    @staticmethod
+    def execute_attack(public_key_file='public.key'):
+        """Выполнение атаки на основе открытого ключа"""
+        try:
+            with open(public_key_file, 'r') as f:
+                e, n = map(int, f.read().split(','))
 
+            print(f"Загружен открытый ключ: e = {e}, n = {n}")
+            private_key = RSAAttack.small_modulus_attack((e, n))
 
-def decode(enc_text):
-    """Декодирование числового представления в текст"""
-    decoded_text = ''
-    for i in range(0, len(enc_text), 2):
-        num = enc_text[i: i + 2]
-        if num in decoding_dict:
-            decoded_text += decoding_dict[num]
-        else:
-            decoded_text += '?'
-    return decoded_text
+            if private_key:
+                print("\nАтака успешна! Найден закрытый ключ.")
+                return private_key
+            else:
+                print("\nАтака не удалась.")
+                return None
+
+        except Exception as ex:
+            print(f"Ошибка при выполнении атаки: {str(ex)}")
+            return None
 
 
 def save_keys(public_key, private_key, pub_file='public.key', priv_file='private.key'):
@@ -176,11 +243,12 @@ def write_file(filename, content):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='RSA шифрование/дешифрование')
+    parser = argparse.ArgumentParser(description='RSA шифрование/дешифрование и атаки')
     parser.add_argument('-g', '--generate', action='store_true', help='Сгенерировать новую пару ключей')
     parser.add_argument('-b', '--bits', type=int, default=2, help='Битность ключей (2-4)')
     parser.add_argument('-e', '--encrypt', action='store_true', help='Зашифровать файл')
     parser.add_argument('-d', '--decrypt', action='store_true', help='Расшифровать файл')
+    parser.add_argument('-a', '--attack', action='store_true', help='Выполнить атаку на RSA')
     parser.add_argument('-i', '--input', type=str, help='Входной файл')
     parser.add_argument('-o', '--output', type=str, help='Выходной файл')
     parser.add_argument('--pubkey', type=str, default='public.key', help='Файл открытого ключа')
@@ -188,12 +256,21 @@ def main():
 
     args = parser.parse_args()
 
+    rsa = RSA(args.bits)
+
     if args.generate:
         print(f"Генерация ключей {args.bits}-битной длины...")
-        public_key, private_key = generate_keys(args.bits)
+        public_key, private_key = rsa.generate_keys()
         save_keys(public_key, private_key, args.pubkey, args.privkey)
         print(f"Открытый ключ (e, m): {public_key}")
         print(f"Закрытый ключ (d, m): {private_key}")
+        return
+
+    if args.attack:
+        print("Запуск атаки на RSA...")
+        private_key = RSAAttack.execute_attack(args.pubkey)
+        if private_key:
+            save_keys((0, 0), private_key, 'fake_public.key', 'hacked_private.key')
         return
 
     if args.encrypt or args.decrypt:
@@ -211,11 +288,11 @@ def main():
 
         if args.encrypt:
             print("Шифрование...")
-            result = encrypt(content, public_key)
+            result = rsa.encrypt(content, public_key)
             action = "зашифрован"
         else:
             print("Расшифрование...")
-            result = decrypt(content, private_key)
+            result = rsa.decrypt(content, private_key)
             action = "расшифрован"
 
         if args.output:
@@ -225,7 +302,7 @@ def main():
             print(result)
             print(f"\nТекст успешно {action}!")
     else:
-        print("Не указана операция (шифрование/дешифрование). Используйте -e или -d")
+        print("Не указана операция. Используйте -g, -e, -d или -a")
 
 
 if __name__ == "__main__":
